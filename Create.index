@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  font-family: 'Outfit', 'Noto Sans Tamil', system-ui, sans-serif;
+}
+
+body {
+  @apply bg-[#0a0a0a] text-white antialiased overflow-x-hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tamil {
+  font-family: 'Noto Sans Tamil', sans-serif;
+}
+
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.2); opacity: 0.8; }
+}
+
+.map-grid {
+  background-image: 
+    linear-gradient(rgba(245,158,11,0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(245,158,11,0.07) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
