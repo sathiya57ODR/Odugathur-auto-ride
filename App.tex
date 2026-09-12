@@ -1,0 +1,761 @@
+import React, { useState, useEffect, useRef } from 'react';
+
+// ================= TYPES =================
+type UserRole = 'rider' | 'driver' | 'admin';
+type RideStatus = 'searching' | 'accepted' | 'arrived' | 'in-progress' | 'completed' | 'cancelled';
+type DriverStatus = 'offline' | 'online' | 'busy';
+
+interface Location {
+  lat: number;
+  lng: number;
+  address: string;
+}
+
+interface Ride {
+  id: string;
+  riderName: string;
+  riderPhone: string;
+  pickup: Location;
+  drop: Location;
+  distance: number;
+  fare: number;
+  status: RideStatus;
+  driverId?: string;
+  driverName?: string;
+  otp: string;
+  createdAt: number;
+  acceptedAt?: number;
+}
+
+interface Driver {
+  id: string;
+  name: string;
+  phone: string;
+  autoNumber: string;
+  status: DriverStatus;
+  location: Location;
+  totalRides: number;
+  rating: number;
+  earnings: number;
+  subscriptionStart: number;
+  subscriptionEnd: number;
+  isSubscribed: boolean;
+  onlineHours: number;
+}
+
+interface AppState {
+  role: UserRole;
+  lang: 'en' | 'ta';
+  currentRide: Ride | null;
+  rides: Ride[];
+  drivers: Driver[];
+}
+
+// ================= TRANSLATIONS =================
+const TRANSLATIONS = {
+  en: {
+    appName: 'Odugathur Auto Ride',
+    tagline: 'Your Town, Your Auto',
+    bookAuto: 'Book Auto',
+    pickup: 'Pickup Location',
+    drop: 'Drop Location',
+    fare: 'Estimated Fare',
+    bookNow: 'Book Now',
+    searching: 'Searching for autos...',
+    driverOnWay: 'Driver on the way',
+    rideAccepted: 'Ride Accepted!',
+    enterPickup: 'Enter pickup (e.g., Bus Stand)',
+    enterDrop: 'Enter drop (e.g., Ambur Road)',
+    distance: 'Distance',
+    autoFound: 'Auto found in 2 mins',
+    driver: 'Driver',
+    online: 'Online',
+    offline: 'Offline',
+    goOnline: 'Go Online',
+    goOffline: 'Go Offline',
+    rideRequests: 'Ride Requests',
+    noRequests: 'No requests - you are online and visible',
+    accept: 'Accept Ride',
+    subscription: 'Subscription',
+    active: 'Active',
+    expired: 'Expired',
+    renew: 'Renew Rs 299/month',
+    totalDrivers: 'Total Drivers',
+    activeDrivers: 'Active Now',
+    revenue: 'Revenue',
+    expiryList: 'Expiry Watchlist',
+    gps: 'Live GPS',
+    odugathur: 'Odugathur',
+  },
+  ta: {
+    appName: 'ஓடுகத்தூர் ஆட்டோ சவாரி',
+    tagline: 'உங்கள் ஊர், உங்கள் ஆட்டோ',
+    bookAuto: 'ஆட்டோ புக் செய்',
+    pickup: 'ஏறும் இடம்',
+    drop: 'இறங்கும் இடம்',
+    fare: 'கட்டணம்',
+    bookNow: 'இப்போது புக் செய்',
+    searching: 'ஆட்டோக்களை தேடுகிறது...',
+    driverOnWay: 'ஓட்டுநர் வருகிறார்',
+    rideAccepted: 'சவாரி ஏற்றுக்கொள்ளப்பட்டது!',
+    enterPickup: 'ஏறும் இடத்தை உள்ளிடவும்',
+    enterDrop: 'இறங்கும் இடத்தை உள்ளிடவும்',
+    distance: 'தூரம்',
+    autoFound: '2 நிமிடத்தில் ஆட்டோ',
+    driver: 'ஓட்டுநர்',
+    online: 'ஆன்லைன்',
+    offline: 'ஆஃப்லைன்',
+    goOnline: 'ஆன்லைன் போக',
+    goOffline: 'ஆஃப்லைன் போக',
+    rideRequests: 'சவாரி கோரிக்கைகள்',
+    noRequests: 'கோரிக்கை இல்லை',
+    accept: 'ஏற்றுக்கொள்',
+    subscription: 'சந்தா',
+    active: 'செயலில்',
+    expired: 'காலாவதி',
+    renew: 'புதுப்பி Rs 299/மாதம்',
+    totalDrivers: 'மொத்த ஓட்டுநர்கள்',
+    activeDrivers: 'இப்போது செயலில்',
+    revenue: 'வருவாய்',
+    expiryList: 'காலாவதி பட்டியல்',
+    gps: 'நேரடி GPS',
+    odugathur: 'ஓடுகத்தூர்',
+  }
+};
+
+// ================= CONSTANTS =================
+const ODUGATHUR_CENTER = { lat: 12.776, lng: 78.561, address: 'Odugathur Bus Stand, Vellore' };
+
+const LOCATIONS: Location[] = [
+  { lat: 12.776, lng: 78.561, address: 'Bus Stand - பேருந்து நிலையம்' },
+  { lat: 12.778, lng: 78.565, address: 'Ambur Road - ஆம்பூர் சாலை' },
+  { lat: 12.772, lng: 78.558, address: 'Gandhi Nagar - காந்தி நகர்' },
+  { lat: 12.78, lng: 78.56, address: 'Pallikonda Road - பள்ளிகொண்டா சாலை' },
+  { lat: 12.775, lng: 78.567, address: 'Market - சந்தை' },
+  { lat: 12.77, lng: 78.563, address: 'Pudur - புதூர்' },
+  { lat: 12.782, lng: 78.563, address: 'Periyeri - பெரியேரி' },
+  { lat: 12.774, lng: 78.554, address: 'Thiruvannamalai Road' },
+];
+
+const INITIAL_DRIVERS: Driver[] = [
+  {
+    id: 'D001', name: 'Murugan K', phone: '9876543210', autoNumber: 'TN23 BX 1234',
+    status: 'online', location: LOCATIONS[0], totalRides: 342, rating: 4.8, earnings: 45200,
+    subscriptionStart: Date.now() - 10 * 86400000, subscriptionEnd: Date.now() + 20 * 86400000,
+    isSubscribed: true, onlineHours: 8.5
+  },
+  {
+    id: 'D002', name: 'Suresh R', phone: '9876543211', autoNumber: 'TN23 BY 5678',
+    status: 'offline', location: LOCATIONS[2], totalRides: 189, rating: 4.6, earnings: 28100,
+    subscriptionStart: Date.now() - 35 * 86400000, subscriptionEnd: Date.now() - 5 * 86400000,
+    isSubscribed: false, onlineHours: 0
+  },
+  {
+    id: 'D003', name: 'Karthi M', phone: '9876543212', autoNumber: 'TN23 BZ 9012',
+    status: 'online', location: LOCATIONS[1], totalRides: 512, rating: 4.9, earnings: 67800,
+    subscriptionStart: Date.now() - 5 * 86400000, subscriptionEnd: Date.now() + 25 * 86400000,
+    isSubscribed: true, onlineHours: 10.2
+  },
+  {
+    id: 'D004', name: 'Babu S', phone: '9876543213', autoNumber: 'TN23 CA 3456',
+    status: 'busy', location: LOCATIONS[3], totalRides: 267, rating: 4.7, earnings: 39200,
+    subscriptionStart: Date.now() - 20 * 86400000, subscriptionEnd: Date.now() + 10 * 86400000,
+    isSubscribed: true, onlineHours: 6.1
+  },
+];
+
+// ================= HELPERS =================
+function calculateDistance(a: Location, b: Location): number {
+  const R = 6371;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLng = (b.lng - a.lng) * Math.PI / 180;
+  const lat1 = a.lat * Math.PI / 180;
+  const lat2 = b.lat * Math.PI / 180;
+  const hav = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(hav), Math.sqrt(1-hav));
+}
+
+function calculateFare(distanceKm: number): number {
+  const base = 30;
+  const perKm = 15;
+  const minFare = 40;
+  const fare = base + distanceKm * perKm;
+  return Math.max(minFare, Math.round(fare / 5) * 5);
+}
+
+function generateOTP(): string {
+  return Math.floor(1000 + Math.random()*9000).toString();
+}
+
+// Razorpay Checkout
+function openRazorpayCheckout(driverId: string, onSuccess: () => void) {
+  // @ts-ignore
+  if (typeof window.Razorpay === 'undefined') {
+    alert('Razorpay SDK not loaded. This is placeholder - add real key in production.');
+    onSuccess();
+    return;
+  }
+  // @ts-ignore
+  const options = {
+    key: 'rzp_test_YOUR_KEY_HERE',
+    amount: 29900,
+    currency: 'INR',
+    name: 'Odugathur Auto Ride',
+    description: 'Driver Monthly Subscription - Rs 299',
+    image: '/icon-192.png',
+    handler: function(response: any) {
+      console.log('Payment success', response);
+      onSuccess();
+    },
+    prefill: { name: 'Driver', contact: '9999999999' },
+    theme: { color: '#f59e0b' }
+  };
+  // @ts-ignore
+  const rzp = new window.Razorpay(options);
+  rzp.open();
+}
+
+// ================= COMPONENTS =================
+
+function MapPlaceholder({ pickup, drop, driverLoc, isDriver = false }: { pickup?: Location, drop?: Location, driverLoc?: Location, isDriver?: boolean }) {
+  return (
+    <div className="relative w-full h-[280px] rounded-[24px] overflow-hidden bg-[#161616] border border-[#262626] map-grid">
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="w-[140px] h-[140px] rounded-full border border-amber-500/20 bg-amber-500/5 animate-pulse" />
+      </div>
+      <div className="absolute top-4 left-4 bg-black/80 backdrop-blur px-3 py-1.5 rounded-full text-[11px] font-bold tracking-widest text-amber-400 border border-amber-500/20">
+        ODUGATHUR • 12.776°N 78.561°E
+      </div>
+      {pickup && (
+        <div className="absolute left-1/3 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
+          <div className="w-3 h-3 bg-emerald-500 rounded-full animate-[pulse-dot_2s_infinite] shadow-[0_0_20px_rgba(16,185,129,0.6)]" />
+          <div className="mt-2 bg-emerald-500 text-black text-[10px] font-bold px-2 py-0.5 rounded-full">PICKUP</div>
+          <div className="mt-1 text-[10px] text-white/70 max-w-[100px] truncate">{pickup.address}</div>
+        </div>
+      )}
+      {drop && (
+        <div className="absolute right-1/3 top-1/3 -translate-x-1/2 flex flex-col items-center">
+          <div className="w-3 h-3 bg-red-500 rounded-full shadow-[0_0_20px_rgba(239,68,68,0.6)]" />
+          <div className="mt-2 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">DROP</div>
+          <div className="mt-1 text-[10px] text-white/70 max-w-[100px] truncate">{drop.address}</div>
+        </div>
+      )}
+      {driverLoc && (
+        <div className="absolute left-1/2 top-[60%] -translate-x-1/2 flex flex-col items-center">
+          <div className="w-8 h-8 bg-amber-400 rounded-full flex items-center justify-center text-black font-black text-[14px] shadow-[0_0_20px_rgba(245,158,11,0.6)]">🛺</div>
+          <div className="mt-1 bg-amber-400 text-black text-[9px] font-bold px-2 py-0.5 rounded-full">{isDriver ? 'YOU' : 'AUTO'}</div>
+        </div>
+      )}
+      <svg className="absolute inset-0 w-full h-full pointer-events-none">
+        {pickup && drop && (
+          <line x1="33%" y1="50%" x2="66%" y2="33%" stroke="#f59e0b" strokeWidth="2" strokeDasharray="6 6" opacity={0.5} />
+        )}
+      </svg>
+      <div className="absolute bottom-3 right-3 flex gap-2">
+        <div className="bg-black/80 backdrop-blur px-2.5 py-1 rounded-full text-[10px] border border-white/10">🛰️ GPS Live</div>
+        <div className="bg-black/80 backdrop-blur px-2.5 py-1 rounded-full text-[10px] border border-white/10">📍 Vellore DT</div>
+      </div>
+    </div>
+  );
+}
+
+function RiderView({ t, drivers, rides, setRides, setCurrentRide, currentRide, lang }: any) {
+  const [pickupInput, setPickupInput] = useState('');
+  const [dropInput, setDropInput] = useState('');
+  const [pickupLoc, setPickupLoc] = useState<Location>(LOCATIONS[0]);
+  const [dropLoc, setDropLoc] = useState<Location>(LOCATIONS[1]);
+  const [fare, setFare] = useState(0);
+  const [distance, setDistance] = useState(0);
+  const [isBooking, setIsBooking] = useState(false);
+
+  useEffect(() => {
+    const d = calculateDistance(pickupLoc, dropLoc);
+    setDistance(d);
+    setFare(calculateFare(d));
+  }, [pickupLoc, dropLoc]);
+
+  const filteredPickup = LOCATIONS.filter(l => l.address.toLowerCase().includes(pickupInput.toLowerCase()));
+  const filteredDrop = LOCATIONS.filter(l => l.address.toLowerCase().includes(dropInput.toLowerCase()));
+
+  const handleBook = () => {
+    setIsBooking(true);
+    const newRide: Ride = {
+      id: 'R' + Date.now(),
+      riderName: 'Guest Rider',
+      riderPhone: '98765 43210',
+      pickup: pickupLoc,
+      drop: dropLoc,
+      distance,
+      fare,
+      status: 'searching',
+      otp: generateOTP(),
+      createdAt: Date.now(),
+    };
+    setTimeout(() => {
+      const onlineDriver = drivers.find((d: Driver) => d.status === 'online' && d.isSubscribed);
+      if (onlineDriver) {
+        newRide.status = 'accepted';
+        newRide.driverId = onlineDriver.id;
+        newRide.driverName = onlineDriver.name;
+        newRide.acceptedAt = Date.now();
+      }
+      setCurrentRide(newRide);
+      setRides((prev: Ride[]) => [newRide, ...prev]);
+      setIsBooking(false);
+    }, 1800);
+  };
+
+  return (
+    <div className="space-y-5">
+      <MapPlaceholder pickup={pickupLoc} drop={dropLoc} driverLoc={drivers[0]?.location} />
+
+      {currentRide ? (
+        <div className="bg-[#1a1a1a] rounded-[20px] border border-amber-500/20 p-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-500 flex items-center justify-center text-black font-bold">{currentRide.driverName?.[0]}</div>
+              <div>
+                <div className="font-bold text-[14px]">{currentRide.driverName || 'Searching...'}</div>
+                <div className="text-[11px] text-white/60">{t.driverOnWay} • {currentRide.status}</div>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-[10px] text-white/50 tracking-widest">OTP</div>
+              <div className="font-black text-amber-400 text-[18px]">{currentRide.otp}</div>
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-3 gap-3">
+            <div className="bg-black rounded-xl p-3">
+              <div className="text-[10px] text-white/50 uppercase tracking-widest">{t.fare}</div>
+              <div className="font-bold">₹{currentRide.fare}</div>
+            </div>
+            <div className="bg-black rounded-xl p-3">
+              <div className="text-[10px] text-white/50 uppercase tracking-widest">{t.distance}</div>
+              <div className="font-bold">{currentRide.distance.toFixed(1)} km</div>
+            </div>
+            <div className="bg-black rounded-xl p-3">
+              <div className="text-[10px] text-white/50 uppercase tracking-widest">ETA</div>
+              <div className="font-bold">3 min</div>
+            </div>
+          </div>
+          <button onClick={() => setCurrentRide(null)} className="mt-4 w-full py-3 rounded-full bg-white/10 text-[13px] font-semibold">Book Another</button>
+        </div>
+      ) : (
+        <>
+          <div className="bg-[#1a1a1a] rounded-[24px] border border-[#262626] p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-[16px]">{t.bookAuto}</h3>
+              <div className="text-[11px] bg-emerald-500/20 text-emerald-400 px-3 py-1 rounded-full border border-emerald-500/20">● {drivers.filter((d: Driver)=>d.status==='online').length} autos nearby</div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="relative">
+                <div className="absolute left-4 top-4 w-2 h-2 bg-emerald-500 rounded-full" />
+                <input value={pickupInput} onChange={e=>setPickupInput(e.target.value)} placeholder={t.enterPickup} className="w-full bg-black border border-[#2a2a2a] rounded-[14px] pl-10 pr-4 py-3.5 text-[14px] outline-none focus:border-amber-500/50" />
+                {pickupInput && filteredPickup.length > 0 && (
+                  <div className="absolute z-10 mt-2 w-full bg-[#1e1e1e] border border-[#2a2a2a] rounded-[14px] overflow-hidden shadow-2xl">
+                    {filteredPickup.slice(0,4).map(l => (
+                      <button key={l.address} onClick={()=>{setPickupLoc(l); setPickupInput(l.address);}} className="w-full text-left px-4 py-3 text-[13px] hover:bg-white/5 border-b border-white/5 last:border-0">{l.address}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="relative">
+                <div className="absolute left-4 top-4 w-2 h-2 bg-red-500 rounded-full" />
+                <input value={dropInput} onChange={e=>setDropInput(e.target.value)} placeholder={t.enterDrop} className="w-full bg-black border border-[#2a2a2a] rounded-[14px] pl-10 pr-4 py-3.5 text-[14px] outline-none focus:border-amber-500/50" />
+                {dropInput && filteredDrop.length > 0 && (
+                  <div className="absolute z-10 mt-2 w-full bg-[#1e1e1e] border border-[#2a2a2a] rounded-[14px] overflow-hidden shadow-2xl">
+                    {filteredDrop.slice(0,4).map(l => (
+                      <button key={l.address} onClick={()=>{setDropLoc(l); setDropInput(l.address);}} className="w-full text-left px-4 py-3 text-[13px] hover:bg-white/5 border-b border-white/5 last:border-0">{l.address}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-black rounded-[14px] p-3 border border-[#1f1f1f]">
+                <div className="text-[10px] text-white/40 uppercase tracking-widest">{t.distance}</div>
+                <div className="font-bold text-[14px] mt-1">{distance.toFixed(1)} km</div>
+                <div className="text-[10px] text-white/40 mt-1">via NH</div>
+              </div>
+              <div className="bg-amber-500 rounded-[14px] p-3 text-black">
+                <div className="text-[10px] text-black/60 uppercase tracking-widest font-bold">{t.fare}</div>
+                <div className="font-black text-[18px] mt-1">₹{fare}</div>
+                <div className="text-[10px] text-black/60 mt-1">Cash / UPI</div>
+              </div>
+              <div className="bg-black rounded-[14px] p-3 border border-[#1f1f1f]">
+                <div className="text-[10px] text-white/40 uppercase tracking-widest">Time</div>
+                <div className="font-bold text-[14px] mt-1">{Math.ceil(distance*4+3)} min</div>
+                <div className="text-[10px] text-emerald-400 mt-1">● {t.autoFound}</div>
+              </div>
+            </div>
+
+            <button disabled={isBooking} onClick={handleBook} className="w-full bg-amber-400 hover:bg-amber-300 text-black font-black py-4 rounded-full text-[15px] tracking-wide transition-all active:scale-[0.98] disabled:opacity-50">
+              {isBooking ? t.searching : t.bookNow + ' • ₹' + fare}
+            </button>
+
+            <div className="flex items-center justify-center gap-2 text-[11px] text-white/30">
+              <span>🛺</span><span>Odugathur Auto Union • Vellore District • Since 2024</span>
+            </div>
+          </div>
+
+          <div className="bg-[#111] rounded-[20px] border border-[#222] p-4">
+            <div className="text-[12px] font-bold tracking-widest text-white/50 uppercase mb-3">Nearby Autos • {lang==='ta'?'அருகிலுள்ள ஆட்டோக்கள்':''}</div>
+            <div className="space-y-2">
+              {drivers.filter((d: Driver)=>d.status==='online').map((d: Driver)=>(
+                <div key={d.id} className="flex items-center justify-between bg-black rounded-[12px] px-4 py-3 border border-white/5">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-[#222] flex items-center justify-center text-[12px]">🛺</div>
+                    <div>
+                      <div className="text-[13px] font-semibold">{d.name} • {d.autoNumber}</div>
+                      <div className="text-[11px] text-white/50">{d.location.address} • {d.rating}★</div>
+                    </div>
+                  </div>
+                  <div className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2.5 py-1 rounded-full">ONLINE</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function DriverView({ t, drivers, setDrivers, rides, setRides }: any) {
+  const [selectedDriver, setSelectedDriver] = useState<Driver>(drivers[0]);
+  const [gpsEnabled, setGpsEnabled] = useState(true);
+  const [simLocation, setSimLocation] = useState(selectedDriver.location);
+  const gpsRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setSimLocation(selectedDriver.location);
+  }, [selectedDriver]);
+
+  useEffect(() => {
+    if (gpsEnabled && selectedDriver.status === 'online') {
+      gpsRef.current = window.setInterval(() => {
+        setSimLocation(prev => ({
+          ...prev,
+          lat: prev.lat + (Math.random()-0.5)*0.0008,
+          lng: prev.lng + (Math.random()-0.5)*0.0008,
+        }));
+      }, 3000);
+    } else {
+      if (gpsRef.current) clearInterval(gpsRef.current);
+    }
+    return () => { if (gpsRef.current) clearInterval(gpsRef.current); };
+  }, [gpsEnabled, selectedDriver.status]);
+
+  const isExpired = selectedDriver.subscriptionEnd < Date.now();
+  const daysLeft = Math.ceil((selectedDriver.subscriptionEnd - Date.now())/86400000);
+
+  const toggleOnline = () => {
+    if (isExpired) {
+      alert(langCheck() ? 'Subscription expired! Renew to go online.' : 'சந்தா காலாவதி! புதுப்பிக்கவும்.');
+      return;
+    }
+    const newStatus: DriverStatus = selectedDriver.status === 'online' ? 'offline' : 'online';
+    const updated = { ...selectedDriver, status: newStatus };
+    setSelectedDriver(updated);
+    setDrivers((prev: Driver[]) => prev.map((d: Driver) => d.id===updated.id ? updated : d));
+  };
+
+  const langCheck = () => false;
+
+  const handleAccept = (ride: Ride) => {
+    const updatedRide = { ...ride, status: 'accepted' as RideStatus, driverId: selectedDriver.id, driverName: selectedDriver.name, acceptedAt: Date.now() };
+    setRides((prev: Ride[]) => prev.map((r: Ride) => r.id===ride.id ? updatedRide : r));
+    const busyDriver = { ...selectedDriver, status: 'busy' as DriverStatus };
+    setSelectedDriver(busyDriver);
+    setDrivers((prev: Driver[]) => prev.map((d: Driver) => d.id===selectedDriver.id ? busyDriver : d));
+  };
+
+  const handleRenew = () => {
+    openRazorpayCheckout(selectedDriver.id, () => {
+      const renewed = {
+        ...selectedDriver,
+        subscriptionStart: Date.now(),
+        subscriptionEnd: Date.now() + 30*86400000,
+        isSubscribed: true,
+      };
+      setSelectedDriver(renewed);
+      setDrivers((prev: Driver[]) => prev.map((d: Driver) => d.id===selectedDriver.id ? renewed : d));
+      alert('Subscription renewed! 30 days added.');
+    });
+  };
+
+  const pendingRides = rides.filter((r: Ride) => r.status==='searching');
+
+  return (
+    <div className="space-y-5">
+      <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+        {drivers.map((d: Driver)=>(
+          <button key={d.id} onClick={()=>setSelectedDriver(d)} className={`flex-shrink-0 px-4 py-2.5 rounded-full text-[13px] font-semibold border transition ${selectedDriver.id===d.id ? 'bg-amber-400 text-black border-amber-400' : 'bg-[#1a1a1a] text-white/70 border-[#2a2a2a]'}`}>
+            {d.name} {d.isSubscribed ? '✓' : '⚠️'}
+          </button>
+        ))}
+      </div>
+
+      <MapPlaceholder pickup={pendingRides[0]?.pickup} driverLoc={simLocation} isDriver />
+
+      <div className="bg-[#1a1a1a] rounded-[20px] border border-[#262626] p-5">
+        <div className="flex items-start justify-between">
+          <div className="flex gap-3">
+            <div className="w-12 h-12 rounded-full bg-amber-500 flex items-center justify-center text-black font-black text-[18px]">{selectedDriver.name[0]}</div>
+            <div>
+              <div className="font-bold">{selectedDriver.name}</div>
+              <div className="text-[12px] text-white/60">{selectedDriver.autoNumber} • {selectedDriver.totalRides} rides • {selectedDriver.rating}★</div>
+              <div className="text-[11px] mt-1 flex items-center gap-2">
+                <span className={`px-2 py-0.5 rounded-full ${selectedDriver.status==='online' ? 'bg-emerald-500/20 text-emerald-400' : selectedDriver.status==='busy' ? 'bg-amber-500/20 text-amber-400' : 'bg-white/10 text-white/50'}`}>{selectedDriver.status.toUpperCase()}</span>
+                <span className="text-white/40">₹{selectedDriver.earnings.toLocaleString()} earned</span>
+              </div>
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-[10px] text-white/40 uppercase tracking-widest">{t.subscription}</div>
+            <div className={`text-[12px] font-bold px-2.5 py-1 rounded-full mt-1 ${isExpired ? 'bg-red-500/20 text-red-400' : daysLeft<5 ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/20 text-emerald-400'}`}>{isExpired ? t.expired : `${daysLeft} days left`}</div>
+          </div>
+        </div>
+
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          <button onClick={toggleOnline} disabled={isExpired} className={`py-3.5 rounded-full font-black text-[13px] tracking-wide ${selectedDriver.status==='online' ? 'bg-white text-black' : 'bg-amber-400 text-black'} disabled:opacity-40`}>
+            {selectedDriver.status==='online' ? '● '+t.goOffline : '○ '+t.goOnline}
+          </button>
+          <button onClick={handleRenew} className="py-3.5 rounded-full bg-[#222] border border-amber-500/30 text-amber-400 font-bold text-[13px]">{t.renew}</button>
+        </div>
+
+        <div className="mt-4 flex items-center justify-between bg-black rounded-full px-4 py-3 border border-[#1f1f1f]">
+          <div className="flex items-center gap-2 text-[12px]">
+            <span className={`w-2 h-2 rounded-full ${gpsEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-white/20'}`} />
+            <span className="font-semibold">{t.gps} {gpsEnabled ? 'ON' : 'OFF'}</span>
+            <span className="text-white/40 text-[11px]">• {simLocation.lat.toFixed(4)}, {simLocation.lng.toFixed(4)}</span>
+          </div>
+          <button onClick={()=>setGpsEnabled(!gpsEnabled)} className={`w-11 h-6 rounded-full p-1 transition ${gpsEnabled ? 'bg-emerald-500' : 'bg-white/20'}`}>
+            <div className={`w-4 h-4 bg-white rounded-full transition-transform ${gpsEnabled ? 'translate-x-5' : ''}`} />
+          </button>
+        </div>
+
+        {isExpired && (
+          <div className="mt-4 bg-red-500/10 border border-red-500/20 rounded-[14px] p-3 text-[12px] text-red-300">
+            ⚠️ Subscription expired on {new Date(selectedDriver.subscriptionEnd).toLocaleDateString()}. You are blocked from receiving rides. Renew for Rs 299/month.
+          </div>
+        )}
+      </div>
+
+      <div className="bg-[#111] rounded-[20px] border border-[#222] p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-[12px] font-bold tracking-widest text-white/50 uppercase">{t.rideRequests} • {pendingRides.length}</div>
+          <div className="text-[11px] text-white/30">Odugathur area only</div>
+        </div>
+        {pendingRides.length===0 ? (
+          <div className="text-center py-10">
+            <div className="text-[32px]">🛺</div>
+            <div className="text-[13px] text-white/50 mt-2">{t.noRequests}</div>
+            <div className="text-[11px] text-white/20 mt-1">Stay online to get requests from {LOCATIONS[0].address}</div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {pendingRides.map((ride: Ride)=>(
+              <div key={ride.id} className="bg-black rounded-[16px] p-4 border border-white/5">
+                <div className="flex justify-between">
+                  <div>
+                    <div className="font-bold text-[14px]">{ride.pickup.address} → {ride.drop.address}</div>
+                    <div className="text-[12px] text-white/50 mt-1">{ride.distance.toFixed(1)} km • ₹{ride.fare} • OTP {ride.otp}</div>
+                  </div>
+                  <div className="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-1 rounded-full h-fit">{ride.status}</div>
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <button onClick={()=>handleAccept(ride)} className="flex-1 bg-amber-400 text-black font-bold py-2.5 rounded-full text-[13px]">{t.accept} • ₹{ride.fare}</button>
+                  <button className="px-4 py-2.5 rounded-full bg-white/10 text-[13px]">Ignore</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AdminView({ t, drivers, rides }: any) {
+  const totalDrivers = drivers.length;
+  const activeDrivers = drivers.filter((d: Driver)=>d.status==='online').length;
+  const totalRevenue = drivers.reduce((acc: number, d: Driver)=>acc + d.earnings, 0);
+  const expiredDrivers = drivers.filter((d: Driver)=> d.subscriptionEnd < Date.now());
+  const expiringSoon = drivers.filter((d: Driver)=> {
+    const days = (d.subscriptionEnd - Date.now())/86400000;
+    return days>0 && days<7;
+  });
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-[#1a1a1a] rounded-[20px] border border-[#262626] p-4">
+          <div className="text-[10px] tracking-widest uppercase text-white/40">{t.totalDrivers}</div>
+          <div className="text-[28px] font-black mt-1">{totalDrivers}</div>
+          <div className="text-[11px] text-emerald-400 mt-1">● All registered autos</div>
+        </div>
+        <div className="bg-amber-500 rounded-[20px] p-4 text-black">
+          <div className="text-[10px] tracking-widest uppercase text-black/60 font-bold">{t.activeDrivers}</div>
+          <div className="text-[28px] font-black mt-1">{activeDrivers}</div>
+          <div className="text-[11px] text-black/70 mt-1">Live now in Odugathur</div>
+        </div>
+        <div className="bg-[#1a1a1a] rounded-[20px] border border-[#262626] p-4">
+          <div className="text-[10px] tracking-widest uppercase text-white/40">{t.revenue} (Fees)</div>
+          <div className="text-[22px] font-black mt-1">₹{(totalRevenue*0.05).toLocaleString()}</div>
+          <div className="text-[11px] text-white/40 mt-1">5% commission • {rides.length} rides</div>
+        </div>
+        <div className="bg-[#1a1a1a] rounded-[20px] border border-[#262626] p-4">
+          <div className="text-[10px] tracking-widest uppercase text-white/40">Sub Revenue</div>
+          <div className="text-[22px] font-black mt-1">₹{(drivers.filter((d: Driver)=>d.isSubscribed).length*299).toLocaleString()}</div>
+          <div className="text-[11px] text-amber-400 mt-1">Rs 299 × {drivers.filter((d: Driver)=>d.isSubscribed).length} drivers</div>
+        </div>
+      </div>
+
+      <div className="bg-[#111] rounded-[20px] border border-[#222] p-4">
+        <div className="text-[12px] font-bold tracking-widest uppercase text-white/50 mb-3">Live Map - All Autos</div>
+        <MapPlaceholder driverLoc={ODUGATHUR_CENTER} />
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          {drivers.map((d: Driver)=>(
+            <div key={d.id} className="bg-black rounded-[12px] p-2.5 border border-white/5">
+              <div className="text-[11px] font-bold">{d.name}</div>
+              <div className="text-[10px] text-white/50">{d.autoNumber}</div>
+              <div className={`text-[9px] mt-1 px-2 py-0.5 rounded-full inline-block ${d.status==='online'?'bg-emerald-500/20 text-emerald-400': d.status==='busy'?'bg-amber-500/20 text-amber-400':'bg-white/10 text-white/40'}`}>{d.status}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-[#1a1a1a] rounded-[20px] border border-red-500/20 p-4">
+        <div className="flex items-center justify-between">
+          <div className="text-[12px] font-bold tracking-widest uppercase text-red-400">{t.expiryList} • {expiredDrivers.length} expired, {expiringSoon.length} expiring</div>
+          <div className="text-[10px] bg-red-500/20 text-red-400 px-2 py-1 rounded-full">ACTION NEEDED</div>
+        </div>
+        <div className="mt-3 space-y-2">
+          {[...expiredDrivers, ...expiringSoon].map((d: Driver)=> {
+            const isExpired = d.subscriptionEnd < Date.now();
+            const days = Math.ceil((d.subscriptionEnd - Date.now())/86400000);
+            return (
+              <div key={d.id} className="flex items-center justify-between bg-black rounded-[12px] px-4 py-3 border border-white/5">
+                <div className="flex items-center gap-3">
+                  <div className={`w-2 h-2 rounded-full ${isExpired?'bg-red-500':'bg-amber-500'}`} />
+                  <div>
+                    <div className="text-[13px] font-semibold">{d.name} • {d.autoNumber}</div>
+                    <div className="text-[11px] text-white/50">Exp: {new Date(d.subscriptionEnd).toLocaleDateString()} • {isExpired ? 'Expired '+Math.abs(days)+'d ago' : days+' days left'}</div>
+                  </div>
+                </div>
+                <div className={`text-[11px] font-bold px-3 py-1 rounded-full ${isExpired?'bg-red-500 text-white':'bg-amber-500 text-black'}`}>{isExpired?'BLOCKED':'RENEW'}</div>
+              </div>
+            );
+          })}
+          {expiredDrivers.length===0 && expiringSoon.length===0 && <div className="text-[12px] text-white/40 text-center py-6">All subscriptions active ✓</div>}
+        </div>
+      </div>
+
+      <div className="bg-[#111] rounded-[20px] border border-[#222] p-4">
+        <div className="text-[12px] font-bold tracking-widest uppercase text-white/50 mb-3">Recent Rides • Odugathur Town</div>
+        <div className="space-y-2">
+          {rides.slice(0,8).map((r: Ride)=>(
+            <div key={r.id} className="flex items-center justify-between bg-black rounded-[12px] px-4 py-2.5 border border-white/5">
+              <div>
+                <div className="text-[12px] font-medium">{r.pickup.address.split('-')[0]} → {r.drop.address.split('-')[0]}</div>
+                <div className="text-[10px] text-white/40">{new Date(r.createdAt).toLocaleTimeString()} • {r.status}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-[12px] font-bold">₹{r.fare}</div>
+                <div className="text-[10px] text-white/40">{r.driverName || 'Unassigned'}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ================= MAIN APP =================
+export default function App() {
+  const [role, setRole] = useState<UserRole>('rider');
+  const [lang, setLang] = useState<'en'|'ta'>('en');
+  const [drivers, setDrivers] = useState<Driver[]>(() => {
+    const saved = localStorage.getItem('odugathur-drivers');
+    return saved ? JSON.parse(saved) : INITIAL_DRIVERS;
+  });
+  const [rides, setRides] = useState<Ride[]>(() => {
+    const saved = localStorage.getItem('odugathur-rides');
+    return saved ? JSON.parse(saved) : [
+      { id: 'R1001', riderName: 'Priya', riderPhone: '9876543210', pickup: LOCATIONS[0], drop: LOCATIONS[1], distance: 2.3, fare: 65, status: 'searching' as RideStatus, otp: '4521', createdAt: Date.now()-1000*60*5 },
+      { id: 'R1002', riderName: 'Kumar', riderPhone: '9876543211', pickup: LOCATIONS[2], drop: LOCATIONS[4], distance: 1.8, fare: 55, status: 'searching' as RideStatus, otp: '8890', createdAt: Date.now()-1000*60*2 },
+    ];
+  });
+  const [currentRide, setCurrentRide] = useState<Ride | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem('odugathur-drivers', JSON.stringify(drivers));
+  }, [drivers]);
+
+  useEffect(() => {
+    localStorage.setItem('odugathur-rides', JSON.stringify(rides));
+  }, [rides]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDrivers(prev => prev.map(d => {
+        if (d.subscriptionEnd < Date.now() && d.isSubscribed) {
+          return { ...d, isSubscribed: false, status: 'offline' as DriverStatus };
+        }
+        return d;
+      }));
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const t = TRANSLATIONS[lang];
+
+  return (
+    <div className="min-h-screen bg-[#0a0a0a] text-white selection:bg-amber-500/30">
+      <div className="sticky top-0 z-30 backdrop-blur-xl bg-[#0a0a0a]/80 border-b border-[#1a1a1a]">
+        <div className="max-w-[520px] mx-auto px-5 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-amber-400 flex items-center justify-center text-black font-black text-[18px]">🛺</div>
+            <div>
+              <div className="font-black text-[15px] tracking-tight leading-none">{t.appName}</div>
+              <div className="text-[11px] text-white/50 tracking-wide">{t.tagline} • {t.odugathur}</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={()=>setLang(lang==='en'?'ta':'en')} className="px-3 py-1.5 rounded-full bg-[#1a1a1a] border border-[#2a2a2a] text-[11px] font-bold">
+              {lang==='en' ? 'தமிழ்' : 'EN'}
+            </button>
+            <div className="w-8 h-8 rounded-full bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center text-[12px]">📱 PWA</div>
+          </div>
+        </div>
+        <div className="max-w-[520px] mx-auto px-5 pb-3">
+          <div className="grid grid-cols-3 gap-2 p-1 bg-[#141414] rounded-full border border-[#1f1f1f]">
+            {(['rider','driver','admin'] as UserRole[]).map(r => (
+              <button key={r} onClick={()=>setRole(r)} className={`py-2.5 rounded-full text-[13px] font-bold capitalize transition-all ${role===r ? 'bg-white text-black shadow-lg' : 'text-white/60 hover:text-white'}`}>
+                {r === 'rider' ? '🙋 Rider' : r==='driver' ? '🛺 Driver' : '📊 Admin'}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-[520px] mx-auto px-5 py-5 pb-24">
+        {role==='rider' && <RiderView t={t} drivers={drivers} rides={rides} setRides={setRides} currentRide={currentRide} setCurrentRide={setCurrentRide} lang={lang} />}
+        {role==='driver' && <DriverView t={t} drivers={drivers} setDrivers={setDrivers} rides={rides} setRides={setRides} />}
+        {role==='admin' && <AdminView t={t} drivers={drivers} rides={rides} />}
+      </div>
+
+      <div className="fixed bottom-0 left-0 right-0 bg-[#0a0a0a]/90 backdrop-blur-xl border-t border-[#1a1a1a] px-5 py-3">
+        <div className="max-w-[520px] mx-auto flex items-center justify-between text-[11px] text-white/30">
+          <span>© 2024 Odugathur Auto Union • Built for Vellore DT</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" /> Live</span>
+        </div>
+      </div>
+    </div>
+  );
+}
